@@ -43,7 +43,15 @@ Options for init:
     maxSessions: config.session.maxSessions,
     maxTurns: config.session.maxTurns,
     maxChars: config.session.maxChars,
+    persistDir: config.session.persistDir,
+    flushIntervalMs: config.session.flushIntervalMs,
   });
+  if (config.session.enabled && config.session.persistDir) {
+    const n = await sessions.init();
+    console.error(
+      `[prompt-to-api] session snapshots: loaded ${n} from ${config.session.persistDir}`,
+    );
+  }
 
   console.error("[prompt-to-api] detecting tools…");
   await catalog.bootstrap();
@@ -53,7 +61,11 @@ Options for init:
     `[prompt-to-api] tools: ${models.map((m) => m.metadata?.toolId).filter(Boolean).join(", ") || "(none)"}`,
   );
   console.error(
-    `[prompt-to-api] sessions: ${config.session.enabled ? `on (ttl=${config.session.ttlMs}ms)` : "off"}`,
+    `[prompt-to-api] sessions: ${
+      config.session.enabled
+        ? `on (ttl=${config.session.ttlMs}ms${config.session.persistDir ? `, persist=${config.session.persistDir}` : ", memory-only"})`
+        : "off"
+    }`,
   );
 
   const app = createApp({ config, registry, catalog, gate, sessions });
@@ -64,6 +76,11 @@ Options for init:
 
   const shutdown = async () => {
     console.error("[prompt-to-api] shutting down…");
+    try {
+      await sessions.close();
+    } catch (err) {
+      console.error("[prompt-to-api] session flush error:", err);
+    }
     await server.stop(true);
     process.exit(0);
   };

@@ -12,7 +12,7 @@ function cfg(over: Partial<AppConfig> = {}): AppConfig {
     trusted: true,
     timeoutMs: 1000,
     concurrency: { maxGlobal: 2, maxPerAgent: 1 },
-    session: { enabled: true, ttlMs: 60000, maxSessions: 10, maxTurns: 20, maxChars: 10000 },
+    session: { enabled: true, ttlMs: 60000, maxSessions: 10, maxTurns: 20, maxChars: 10000, persistDir: null, flushIntervalMs: 1000 },
     tools: builtinTools,
     ...over,
   };

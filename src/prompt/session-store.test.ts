@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SessionStore, resolveSessionKey } from "./session-store.ts";
 import { resolvePromptText } from "../server.ts";
 import { buildSessionPrompt, clientSentFullHistory } from "../util/messages.ts";
@@ -168,5 +171,78 @@ describe("resolvePromptText", () => {
     expect(r.promptText).toContain("User: old");
     expect(r.promptText).toContain("Assistant: reply");
     expect(r.promptText).toContain("User: follow up");
+  });
+});
+
+
+
+describe("SessionStore hybrid disk", () => {
+  test("flush and reload across instances", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pta-sess-"));
+    try {
+      const a = new SessionStore({
+        ttlMs: 60_000,
+        maxSessions: 10,
+        maxTurns: 20,
+        maxChars: 10_000,
+        persistDir: dir,
+        flushIntervalMs: 60_000,
+      });
+      a.append("sid:disk", { toolId: "claude", cwd: "/tmp" }, [
+        { role: "user", content: "hello disk" },
+        { role: "assistant", content: "saved" },
+      ]);
+      await a.flush();
+      await a.close();
+
+      const b = new SessionStore({
+        ttlMs: 60_000,
+        maxSessions: 10,
+        maxTurns: 20,
+        maxChars: 10_000,
+        persistDir: dir,
+        flushIntervalMs: 60_000,
+      });
+      const n = await b.init();
+      expect(n).toBe(1);
+      const rec = b.get("sid:disk");
+      expect(rec?.turns.map((t) => t.content)).toEqual(["hello disk", "saved"]);
+      await b.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reset removes snapshot file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pta-sess-"));
+    try {
+      const a = new SessionStore({
+        ttlMs: 60_000,
+        maxSessions: 10,
+        maxTurns: 20,
+        maxChars: 10_000,
+        persistDir: dir,
+        flushIntervalMs: 60_000,
+      });
+      a.append("sid:gone", { toolId: "t", cwd: "/" }, [{ role: "user", content: "x" }]);
+      await a.flush();
+      a.reset("sid:gone");
+      await a.flush();
+      await a.close();
+
+      const b = new SessionStore({
+        ttlMs: 60_000,
+        maxSessions: 10,
+        maxTurns: 20,
+        maxChars: 10_000,
+        persistDir: dir,
+        flushIntervalMs: 60_000,
+      });
+      expect(await b.init()).toBe(0);
+      expect(b.get("sid:gone")).toBeUndefined();
+      await b.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

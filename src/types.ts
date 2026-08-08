@@ -18,6 +18,14 @@ export interface SessionConfig {
   maxTurns: number;
   /** Max total characters across retained turn contents */
   maxChars: number;
+  /**
+   * Optional directory for hybrid disk snapshots.
+   * Memory remains source of truth; dirty sessions flush asynchronously.
+   * null/empty disables persistence.
+   */
+  persistDir: string | null;
+  /** Debounced flush interval for dirty sessions (ms). */
+  flushIntervalMs: number;
 }
 
 export type SessionMode = "auto" | "off" | "delta" | "full";

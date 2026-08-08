@@ -150,6 +150,7 @@ export function normalizeConfig(raw: unknown): Partial<AppConfig> {
   const rawSession = r.session;
   if (rawSession && typeof rawSession === "object") {
     const s = rawSession as Record<string, unknown>;
+    const rawPersist = s.persistDir ?? s.persist_dir;
     session = {
       ...(parseBoolean(s.enabled) !== undefined ? { enabled: parseBoolean(s.enabled)! } : {}),
       ...(s.ttlMs !== undefined || s.ttl_ms !== undefined
@@ -163,6 +164,17 @@ export function normalizeConfig(raw: unknown): Partial<AppConfig> {
         : {}),
       ...(s.maxChars !== undefined || s.max_chars !== undefined
         ? { maxChars: Number(s.maxChars ?? s.max_chars) }
+        : {}),
+      ...(rawPersist !== undefined
+        ? {
+            persistDir:
+              rawPersist === null || rawPersist === ""
+                ? null
+                : expandHome(String(rawPersist)),
+          }
+        : {}),
+      ...(s.flushIntervalMs !== undefined || s.flush_interval_ms !== undefined
+        ? { flushIntervalMs: Number(s.flushIntervalMs ?? s.flush_interval_ms) }
         : {}),
     };
   }
@@ -226,6 +238,10 @@ export async function loadConfig(specifiedPath?: string): Promise<AppConfig> {
       : {}),
   };
 
+  // session env overlays applied after merge below
+  const sessionEnvPersist = process.env.PROMPT_TO_API_SESSION_DIR;
+  const sessionEnvFlush = process.env.PROMPT_TO_API_SESSION_FLUSH_MS;
+
   const tools = deepMergeTools(
     builtinTools,
     deepMergeTools(fromFile.tools ?? {}, fromUser.tools),
@@ -236,13 +252,29 @@ export async function loadConfig(specifiedPath?: string): Promise<AppConfig> {
     maxPerAgent: fromUser.concurrency?.maxPerAgent ?? fromFile.concurrency?.maxPerAgent ?? 2,
   };
 
+  const defaultPersistDir = expandHome("~/.cache/prompt-to-api/sessions");
   const session: SessionConfig = {
     enabled: fromUser.session?.enabled ?? fromFile.session?.enabled ?? true,
     ttlMs: fromUser.session?.ttlMs ?? fromFile.session?.ttlMs ?? 3_600_000,
     maxSessions: fromUser.session?.maxSessions ?? fromFile.session?.maxSessions ?? 256,
     maxTurns: fromUser.session?.maxTurns ?? fromFile.session?.maxTurns ?? 40,
     maxChars: fromUser.session?.maxChars ?? fromFile.session?.maxChars ?? 200_000,
+    persistDir:
+      fromUser.session?.persistDir !== undefined
+        ? fromUser.session.persistDir
+        : fromFile.session?.persistDir !== undefined
+          ? fromFile.session.persistDir
+          : defaultPersistDir,
+    flushIntervalMs:
+      fromUser.session?.flushIntervalMs ?? fromFile.session?.flushIntervalMs ?? 1000,
   };
+  if (sessionEnvPersist !== undefined) {
+    session.persistDir =
+      sessionEnvPersist.trim() === "" ? null : expandHome(sessionEnvPersist);
+  }
+  if (sessionEnvFlush !== undefined && sessionEnvFlush.trim() !== "") {
+    session.flushIntervalMs = Number(sessionEnvFlush);
+  }
 
   return {
     host: env.host ?? fromUser.host ?? fromFile.host ?? "127.0.0.1",
