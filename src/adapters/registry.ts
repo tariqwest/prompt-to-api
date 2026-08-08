@@ -102,6 +102,7 @@ function toSpec(toolId: string, cfg: import("../types.ts").ToolConfig): ToolSpec
     stdinMode: cfg.stdinMode ?? "auto",
     forcePromptChannel: Boolean(cfg.forcePromptChannel),
     ...(cfg.stdinPromptArg !== undefined ? { stdinPromptArg: cfg.stdinPromptArg } : {}),
+    ...(cfg.contextFlag !== undefined ? { contextFlag: cfg.contextFlag } : {}),
     ...(cfg.modelFlag !== undefined ? { modelFlag: cfg.modelFlag } : {}),
     trustedArgs: [...(cfg.trustedArgs ?? [])],
     extraArgs: [...(cfg.extraArgs ?? [])],

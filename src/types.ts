@@ -17,6 +17,8 @@ export interface ToolConfig {
   stdinMode: StdinMode;
   forcePromptChannel?: boolean;
   stdinPromptArg?: string;
+  /** Flag that accepts context from stdin (e.g. goose -i -). */
+  contextFlag?: string;
   modelFlag?: string;
   trustedArgs?: string[];
   extraArgs?: string[];
@@ -47,6 +49,7 @@ export interface ToolSpec {
   stdinMode: StdinMode;
   forcePromptChannel: boolean;
   stdinPromptArg?: string;
+  contextFlag?: string;
   modelFlag?: string;
   trustedArgs: string[];
   extraArgs: string[];

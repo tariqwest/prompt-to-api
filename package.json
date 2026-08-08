@@ -13,7 +13,12 @@
     "config",
     "README.md",
     "LICENSE",
-    "!src/**/*.test.ts"
+    "!src/**/*.test.ts",
+    "scripts/smoke-matrix.mjs",
+    "scripts/release.mjs",
+    "scripts/generate-homebrew-formula.mjs",
+    "Formula/prompt-to-api.rb",
+    "!Formula/*"
   ],
   "engines": {
     "node": ">=20",
@@ -25,7 +30,12 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "prepack": "bun run typecheck",
-    "prepublishOnly": "bun run typecheck"
+    "prepublishOnly": "bun run typecheck",
+    "smoke": "bun scripts/smoke-matrix.mjs",
+    "release": "bun scripts/release.mjs",
+    "release:dry": "bun scripts/release.mjs --dry-run",
+    "formula": "bun scripts/generate-homebrew-formula.mjs",
+    "formula:write": "bun scripts/generate-homebrew-formula.mjs --write Formula/prompt-to-api.rb"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",

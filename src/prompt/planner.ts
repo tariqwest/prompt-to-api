@@ -6,82 +6,141 @@ export interface PlanOptions {
   cwd: string;
   trusted: boolean;
   modelId?: string;
-  /** Optional extra context piped as stdin when stdinMode allows */
+  /** Optional extra context / stdin payload when stdinMode allows */
   context?: string;
   passThroughArgs?: string[];
 }
 
 /**
  * Build argv + stdin for a single-prompt CLI invocation.
- * Mirrors promptpipe headless run planning (simplified).
+ * Mirrors promptpipe `planCommand` headless run semantics:
+ * - prompt channel first (arg/flag/stdin/combined/none)
+ * - then modelFlag + model
+ * - then trailing trustedArgs + extraArgs + pass-through
  */
 export function planInvocation(opts: PlanOptions): PlannedInvocation {
   const { spec, prompt, cwd, trusted, modelId, context, passThroughArgs } = opts;
-  const argv = [...spec.command];
+  const cmd = [...spec.command];
 
-  if (trusted && spec.trustedArgs.length) {
-    argv.push(...spec.trustedArgs);
-  }
-  if (spec.extraArgs.length) {
-    argv.push(...spec.extraArgs);
-  }
-  if (modelId && spec.modelFlag) {
-    argv.push(spec.modelFlag, modelId);
-  }
-  if (passThroughArgs?.length) {
-    argv.push(...passThroughArgs);
+  const text = prompt.trim() ? prompt.trimEnd() : "";
+  const ctxRaw = typeof context === "string" && context.length > 0 ? context : undefined;
+  const hasPrompt = text.length > 0;
+  const hasStdin = ctxRaw != null;
+
+  let stdinMode = spec.stdinMode ?? "auto";
+  if (stdinMode === "auto") {
+    if (!hasStdin) stdinMode = "none";
+    else if (!hasPrompt) stdinMode = "prompt";
+    else stdinMode = "context";
   }
 
-  let stdin: string | null = null;
-  const text = prompt.trim();
-  const ctx = (context ?? "").trim();
+  let finalStdin: string | null = null;
 
-  switch (spec.promptMode) {
-    case "flag": {
-      const flag = spec.promptFlag ?? "--prompt";
-      argv.push(flag, text || "Hello");
-      if (ctx && spec.stdinMode !== "none") stdin = ctx;
-      break;
+  const pushPrompt = (value: string) => {
+    switch (spec.promptMode) {
+      case "arg":
+        cmd.push(value);
+        break;
+      case "flag": {
+        const flag = spec.promptFlag;
+        if (!flag) {
+          throw new Error(
+            `Tool '${spec.toolId}' promptMode=flag requires promptFlag (e.g. -p or -t)`,
+          );
+        }
+        cmd.push(flag, value);
+        break;
+      }
+      case "stdin":
+      case "combined":
+        finalStdin =
+          finalStdin && finalStdin.length > 0 ? `${value}\n\n${finalStdin}` : value;
+        break;
+      case "none":
+        break;
+      default:
+        cmd.push(value);
     }
-    case "stdin": {
-      stdin = text || "Hello";
-      if (spec.stdinPromptArg) argv.push(spec.stdinPromptArg);
-      break;
+  };
+
+  const promptValue = hasPrompt ? text : "Hello";
+
+  // stdin only (context without prompt text — rare for API)
+  if (hasStdin && !hasPrompt) {
+    if (stdinMode === "none") {
+      pushPrompt("Hello");
+    } else if (spec.stdinPromptArg) {
+      cmd.push(spec.stdinPromptArg);
+      finalStdin = ctxRaw!;
+    } else if (spec.contextFlag && spec.promptMode === "flag") {
+      cmd.push(spec.contextFlag, "-");
+      finalStdin = ctxRaw!;
+    } else if (spec.promptMode === "stdin" || spec.promptMode === "combined") {
+      finalStdin = ctxRaw!;
+    } else if (spec.forcePromptChannel) {
+      pushPrompt(ctxRaw!);
+    } else {
+      finalStdin = ctxRaw!;
     }
-    case "combined": {
-      // prompt as arg; context on stdin when present
-      if (text) argv.push(text);
-      if (ctx) stdin = ctx;
-      else if (!text) stdin = "Hello";
-      break;
+  }
+
+  // prompt only
+  if (hasPrompt && !hasStdin) {
+    pushPrompt(promptValue);
+  }
+
+  // neither — force a minimal prompt on the channel
+  if (!hasPrompt && !hasStdin) {
+    if (spec.promptMode !== "none") {
+      pushPrompt("Hello");
     }
-    case "none": {
-      if (ctx && spec.stdinMode !== "none") stdin = ctx;
-      break;
-    }
-    case "arg":
-    default: {
-      // forcePromptChannel tools always put prompt on argv even if empty-ish
-      if (text || spec.forcePromptChannel) {
-        argv.push(text || "Hello");
-      } else if (spec.stdinMode === "auto" || spec.stdinMode === "prompt") {
-        stdin = "Hello";
-        if (spec.stdinPromptArg) argv.push(spec.stdinPromptArg);
+  }
+
+  // prompt + stdin context
+  if (hasPrompt && hasStdin) {
+    if (stdinMode === "none") {
+      pushPrompt(promptValue);
+    } else if (stdinMode === "prompt") {
+      const merged = `${promptValue}\n\n${ctxRaw}`;
+      if (spec.stdinPromptArg) {
+        cmd.push(spec.stdinPromptArg);
+        finalStdin = merged;
+      } else if (spec.forcePromptChannel) {
+        pushPrompt(merged);
       } else {
-        argv.push("Hello");
+        finalStdin = merged;
       }
-      if (ctx && spec.stdinMode !== "none") {
-        // Prefer piping context when both exist (promptpipe auto)
-        if (text || spec.forcePromptChannel) stdin = ctx;
-        else stdin = [ctx, text].filter(Boolean).join("\n\n") || "Hello";
+    } else {
+      // context
+      pushPrompt(promptValue);
+      if (spec.contextFlag) {
+        cmd.push(spec.contextFlag, "-");
+        finalStdin = ctxRaw!;
+      } else {
+        finalStdin = ctxRaw!;
       }
-      break;
     }
   }
+
+  if (modelId && modelId.trim()) {
+    const modelFlag = spec.modelFlag?.trim();
+    if (!modelFlag) {
+      throw new Error(
+        `Model '${modelId}' requested but tool '${spec.toolId}' has no modelFlag configured`,
+      );
+    }
+    cmd.push(modelFlag, modelId.trim());
+  }
+
+  const trailing: string[] = [];
+  if (trusted && spec.trustedArgs.length) trailing.push(...spec.trustedArgs);
+  if (spec.extraArgs.length) trailing.push(...spec.extraArgs);
+  if (passThroughArgs?.length) trailing.push(...passThroughArgs);
+  if (trailing.length) cmd.push(...trailing);
 
   return {
-    argv,
-    stdin,
+    argv: cmd,
+    stdin: finalStdin,
     cwd,
     env: { ...spec.env },
     toolId: spec.toolId,
@@ -99,6 +158,7 @@ export function formatPlannedCommand(plan: PlannedInvocation): string {
 }
 
 function shellQuote(s: string): string {
-  if (/^[a-zA-Z0-9_./:@%+=,-]+$/.test(s)) return s;
+  if (s.length === 0) return "''";
+  if (/^[A-Za-z0-9_./:=,@%+-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }

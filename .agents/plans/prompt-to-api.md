@@ -28,3 +28,10 @@ See repository AGENTS.md and README. Built-in catalog ports headless run profile
 
 ## Non-goals (v1)
 ACP protocol, full tool-call OpenAI fidelity, skill/slash as first-class API modes, depending on promptpipe at runtime.
+
+
+## Implementation status
+1. Planner parity with promptpipe headless run matrix + unit tests — done
+2. Streaming runner + abort + concurrency gate — done
+3. init + TOML overrides + smoke matrix — done
+4. Release scripts / Homebrew formula — done
