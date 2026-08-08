@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "port": 8788,
+  "authToken": null,
+  "defaultCwd": "~/.config/prompt-to-api/cwd",
+  "trusted": true,
+  "timeoutMs": 600000,
+  "concurrency": {
+    "maxGlobal": 8,
+    "maxPerAgent": 2
+  }
+}
