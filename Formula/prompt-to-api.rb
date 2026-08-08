@@ -27,7 +27,7 @@ class PromptToApi < Formula
 
   def caveats
     <<~EOS
-      prompt-to-api is an OpenAI-compatible REST gateway for local ACP agents.
+      prompt-to-api is an OpenAI-compatible REST gateway for local single-prompt AI CLIs.
 
       Start the server:
 
@@ -45,9 +45,10 @@ class PromptToApi < Formula
         PROMPT_TO_API_PORT
         PROMPT_TO_API_TOKEN
         PROMPT_TO_API_CWD
-        PROMPT_TO_API_PERMISSION_MODE
+        PROMPT_TO_API_TRUSTED
+        PROMPT_TO_API_TIMEOUT_MS
 
-      Install one or more ACP agents on PATH (opencode, devin, oz-acp, agy-acp, fm-acp).
+      Install one or more supported CLIs on PATH (claude, codex, opencode, fm, ...).
       Prefer Bun when available; Node uses the bundled tsx loader.
     EOS
   end

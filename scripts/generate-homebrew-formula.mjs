@@ -220,7 +220,7 @@ class ${className} < Formula
 
   def caveats
     <<~EOS
-      prompt-to-api is an OpenAI-compatible REST gateway for local ACP agents.
+      prompt-to-api is an OpenAI-compatible REST gateway for local single-prompt AI CLIs.
 
       Start the server:
 
@@ -238,9 +238,10 @@ class ${className} < Formula
         PROMPT_TO_API_PORT
         PROMPT_TO_API_TOKEN
         PROMPT_TO_API_CWD
-        PROMPT_TO_API_PERMISSION_MODE
+        PROMPT_TO_API_TRUSTED
+        PROMPT_TO_API_TIMEOUT_MS
 
-      Install one or more ACP agents on PATH (opencode, devin, oz-acp, agy-acp, fm-acp).
+      Install one or more supported CLIs on PATH (claude, codex, opencode, fm, ...).
       Prefer Bun when available; Node uses the bundled tsx loader.
     EOS
   end
@@ -265,7 +266,7 @@ async function main() {
   const homepage = pkg.homepage || `https://github.com/${repo}`;
   const desc =
     pkg.description ||
-    "OpenAI-compatible REST gateway for local ACP agents";
+    "OpenAI-compatible REST gateway for local single-prompt / print-mode AI CLIs";
   const license = pkg.license || "MIT";
   const url = tarballUrl({ source: opts.source, repo, name, version });
 
