@@ -61,6 +61,7 @@ export const builtinTools: Record<string, ToolConfig> = {
     promptMode: "flag",
     promptFlag: "-t",
     stdinMode: "auto",
+    contextFlag: "-i",
     forcePromptChannel: false,
     modelFlag: "--model",
     trustedArgs: [],

@@ -69,6 +69,9 @@ function normalizeTool(agentId: string, a: Record<string, unknown>): ToolConfig 
     ...(a.stdinPromptArg !== undefined || a.stdin_prompt_arg !== undefined
       ? { stdinPromptArg: String(a.stdinPromptArg ?? a.stdin_prompt_arg) }
       : {}),
+    ...(a.contextFlag !== undefined || a.context_flag !== undefined
+      ? { contextFlag: String(a.contextFlag ?? a.context_flag) }
+      : {}),
     ...(a.modelFlag !== undefined || a.model_flag !== undefined
       ? { modelFlag: String(a.modelFlag ?? a.model_flag) }
       : {}),

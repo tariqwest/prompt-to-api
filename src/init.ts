@@ -61,6 +61,7 @@ export async function runInit(args: string[]) {
     lines.push(`prompt_mode = "${cfg.promptMode}"`);
     if (cfg.promptFlag) lines.push(`prompt_flag = "${cfg.promptFlag}"`);
     lines.push(`stdin_mode = "${cfg.stdinMode}"`);
+    if (cfg.contextFlag) lines.push(`context_flag = "${cfg.contextFlag}"`);
     if (cfg.modelFlag) lines.push(`model_flag = "${cfg.modelFlag}"`);
     if (cfg.trustedArgs?.length) lines.push(`trusted_args = ${JSON.stringify(cfg.trustedArgs)}`);
     if (cfg.extraArgs?.length) lines.push(`extra_args = ${JSON.stringify(cfg.extraArgs)}`);

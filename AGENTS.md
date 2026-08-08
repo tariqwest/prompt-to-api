@@ -47,4 +47,7 @@ bun test
 bun run typecheck
 bun run start
 bun run start init --yes
+bun run smoke
+bun run formula:write
+bun run release:dry -- 0.1.0
 ```

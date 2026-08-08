@@ -250,10 +250,14 @@ Generate a full file with `prompt-to-api init`.
 ## Development
 
 ```bash
-bun test             # unit tests (planner, …)
+bun test             # unit tests (planner, registry, runner, …)
 bun run typecheck    # tsc --noEmit
 bun run dev          # server with --watch
 bun run start        # server
+bun run smoke        # live smoke matrix (server must be up)
+SMOKE_DRY_RUN=1 bun run smoke   # dry-run planning only
+bun run formula:write
+bun run release:dry -- 0.1.0
 ```
 
 Architecture notes for agents: [AGENTS.md](./AGENTS.md).  
