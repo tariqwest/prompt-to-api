@@ -238,6 +238,8 @@ Generate a full file with `prompt-to-api init`.
 | `PROMPT_TO_API_CWD` | Default workspace for CLI subprocesses |
 | `PROMPT_TO_API_TRUSTED` | `1`/`0` — default permission bypass |
 | `PROMPT_TO_API_TIMEOUT_MS` | Per-request subprocess timeout (default 600000) |
+| `PROMPT_TO_API_SESSION_DIR` | Session snapshot directory (empty disables disk) |
+| `PROMPT_TO_API_SESSION_FLUSH_MS` | Debounced session flush interval |
 
 ## Behavior notes
 

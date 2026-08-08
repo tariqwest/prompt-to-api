@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import type { SessionTurn } from "../prompt/session-store.ts";
 
 export interface ChatMessage {
   role?: string;
@@ -114,4 +115,67 @@ export function resolveCwd(opts: {
   }
 
   return opts.fallback;
+}
+
+
+/** True when the client likely already sent a multi-turn transcript. */
+export function clientSentFullHistory(messages: ChatMessage[]): boolean {
+  if (messages.length <= 1) return false;
+  let users = 0;
+  let assistants = 0;
+  for (const m of messages) {
+    const role = (m.role ?? "user").toLowerCase();
+    if (role === "user") users++;
+    else if (role === "assistant") assistants++;
+  }
+  return users >= 1 && assistants >= 1;
+}
+
+function turnsToPrompt(turns: SessionTurn[]): string {
+  const lines: string[] = [];
+  for (const t of turns) {
+    const text = t.content.trim();
+    if (!text) continue;
+    if (t.role === "system") lines.push(`System: ${text}`);
+    else if (t.role === "assistant") lines.push(`Assistant: ${text}`);
+    else lines.push(`User: ${text}`);
+  }
+  return lines.join("\n\n").trim();
+}
+
+/**
+ * Assemble prompt for a session-backed request.
+ * - full: store turns + optional latest user if not already last
+ * - delta: tail of store + latest user message
+ */
+export function buildSessionPrompt(opts: {
+  mode: "delta" | "full";
+  storeTurns: SessionTurn[];
+  messages: ChatMessage[];
+  maxTailTurns?: number;
+}): string {
+  const latest = latestUserPrompt(opts.messages);
+  const storePrompt = turnsToPrompt(opts.storeTurns);
+
+  if (opts.mode === "full") {
+    if (!latest) return storePrompt || messagesToPrompt(opts.messages) || "User: Hello";
+    // Avoid duplicating if store already ends with same user turn
+    const last = opts.storeTurns[opts.storeTurns.length - 1];
+    if (last?.role === "user" && last.content.trim() === latest) {
+      return storePrompt || `User: ${latest}`;
+    }
+    const base = storePrompt ? `${storePrompt}\n\nUser: ${latest}` : `User: ${latest}`;
+    return base;
+  }
+
+  // delta
+  const tailN = opts.maxTailTurns ?? 6;
+  const tail = opts.storeTurns.slice(-tailN);
+  const tailPrompt = turnsToPrompt(tail);
+  if (!latest) return tailPrompt || "User: Hello";
+  const last = tail[tail.length - 1];
+  if (last?.role === "user" && last.content.trim() === latest) {
+    return tailPrompt || `User: ${latest}`;
+  }
+  return tailPrompt ? `${tailPrompt}\n\nUser: ${latest}` : `User: ${latest}`;
 }
