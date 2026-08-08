@@ -1,23 +1,135 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { AppConfig } from "./types.ts";
+import type { AppConfig, SessionMode } from "./types.ts";
 import { Registry } from "./adapters/registry.ts";
 import { ModelCatalog } from "./prompt/catalog.ts";
 import { planInvocation, formatPlannedCommand } from "./prompt/planner.ts";
 import { ConcurrencyGate, runPlanned } from "./prompt/runner.ts";
+import { SessionStore, resolveSessionKey } from "./prompt/session-store.ts";
 import {
   ChatCompletionsRequestSchema,
   completionId,
   openaiError,
   toSseChunk,
 } from "./openai/schema.ts";
-import { messagesToPrompt, resolveCwd, type ChatMessage } from "./util/messages.ts";
+import {
+  buildSessionPrompt,
+  clientSentFullHistory,
+  latestUserPrompt,
+  messagesToPrompt,
+  resolveCwd,
+  type ChatMessage,
+} from "./util/messages.ts";
 
 export interface AppContext {
   config: AppConfig;
   registry: Registry;
   catalog: ModelCatalog;
   gate: ConcurrencyGate;
+  sessions: SessionStore;
+}
+
+function parseSessionMode(raw: unknown, fallback: SessionMode = "auto"): SessionMode {
+  const s = String(raw ?? fallback).toLowerCase();
+  if (s === "off" || s === "delta" || s === "full" || s === "auto") return s;
+  return fallback;
+}
+
+function sessionMeta(meta: Record<string, unknown>): {
+  sessionId?: string;
+  mode: SessionMode;
+  reset: boolean;
+} {
+  const sessionId =
+    (typeof meta.session_id === "string" && meta.session_id) ||
+    (typeof meta.sessionId === "string" && meta.sessionId) ||
+    undefined;
+  const mode = parseSessionMode(meta.session_mode ?? meta.sessionMode ?? "auto");
+  const reset = meta.reset_session === true || meta.resetSession === true;
+  return { sessionId, mode, reset };
+}
+
+/** Choose prompt text using optional transcript store. */
+export function resolvePromptText(opts: {
+  sessionEnabled: boolean;
+  sessionKey: string | undefined;
+  mode: SessionMode;
+  reset: boolean;
+  sessions: SessionStore;
+  toolId: string;
+  cwd: string;
+  messages: ChatMessage[];
+}): {
+  promptText: string;
+  sessionKey?: string;
+  usedStore: boolean;
+  mode: SessionMode | "off";
+} {
+  const messages = opts.messages;
+  const baseFallback = () => messagesToPrompt(messages) || "User: Hello";
+
+  if (!opts.sessionEnabled || !opts.sessionKey || opts.mode === "off") {
+    return { promptText: baseFallback(), mode: "off", usedStore: false };
+  }
+
+  const key = opts.sessionKey;
+  if (opts.reset) opts.sessions.reset(key);
+
+  // OpenAI clients often resend full history — trust that transcript.
+  if (opts.mode === "auto" && clientSentFullHistory(messages)) {
+    return {
+      promptText: baseFallback(),
+      sessionKey: key,
+      usedStore: false,
+      mode: "auto",
+    };
+  }
+
+  const existing = opts.sessions.get(key);
+  const hasStore = Boolean(existing && existing.turns.length > 0);
+
+  if (!hasStore) {
+    // First turn: use client messages as-is; store will be filled after success.
+    return {
+      promptText: baseFallback(),
+      sessionKey: key,
+      usedStore: false,
+      mode: opts.mode,
+    };
+  }
+
+  const mode: "delta" | "full" =
+    opts.mode === "full" ? "full" : opts.mode === "delta" ? "delta" : "delta";
+
+  const promptText =
+    buildSessionPrompt({
+      mode,
+      storeTurns: existing!.turns,
+      messages,
+    }) || baseFallback();
+
+  return {
+    promptText,
+    sessionKey: key,
+    usedStore: true,
+    mode,
+  };
+}
+
+function rememberTurn(
+  sessions: SessionStore,
+  key: string | undefined,
+  meta: { toolId: string; cwd: string },
+  messages: ChatMessage[],
+  assistantContent: string,
+) {
+  if (!key) return undefined;
+  const userText = latestUserPrompt(messages);
+  const turns: Array<{ role: "user" | "assistant"; content: string }> = [];
+  if (userText) turns.push({ role: "user", content: userText });
+  if (assistantContent.trim()) turns.push({ role: "assistant", content: assistantContent.trim() });
+  if (!turns.length) return sessions.get(key);
+  return sessions.append(key, meta, turns);
 }
 
 export function createApp(ctx: AppContext) {
@@ -41,6 +153,7 @@ export function createApp(ctx: AppContext) {
       status: "ok",
       tools: ctx.registry.listToolIds(),
       models: ctx.catalog.list().length,
+      sessions: ctx.sessions.size,
     }),
   );
 
@@ -100,7 +213,25 @@ export function createApp(ctx: AppContext) {
           : ctx.config.trusted;
 
     const dryRun = meta.dry_run === true || meta.dryRun === true;
-    const promptText = messagesToPrompt(messages) || "User: Hello";
+    const sess = sessionMeta(meta);
+    const sessionKey = resolveSessionKey({
+      sessionId: sess.sessionId,
+      user: req.user,
+      toolId: resolved.toolId,
+      cwd,
+    });
+
+    const promptResolved = resolvePromptText({
+      sessionEnabled: ctx.config.session.enabled,
+      sessionKey,
+      mode: sess.mode,
+      reset: sess.reset,
+      sessions: ctx.sessions,
+      toolId: resolved.toolId,
+      cwd,
+      messages,
+    });
+    const promptText = promptResolved.promptText;
 
     const plan = planInvocation({
       spec,
@@ -114,6 +245,15 @@ export function createApp(ctx: AppContext) {
     const id = completionId();
     const created = Math.floor(Date.now() / 1000);
     const modelName = resolved.id;
+
+    const sessionInfo = promptResolved.sessionKey
+      ? {
+          session_key: promptResolved.sessionKey,
+          session_mode: promptResolved.mode,
+          used_store: promptResolved.usedStore,
+          session_turns: ctx.sessions.get(promptResolved.sessionKey)?.turns.length ?? 0,
+        }
+      : undefined;
 
     if (dryRun) {
       const cmd = formatPlannedCommand(plan);
@@ -131,7 +271,10 @@ export function createApp(ctx: AppContext) {
           },
         ],
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        prompt_to_api: { plan: { argv: plan.argv, stdin: plan.stdin, cwd: plan.cwd } },
+        prompt_to_api: {
+          plan: { argv: plan.argv, stdin: plan.stdin, cwd: plan.cwd },
+          ...(sessionInfo ? { session: sessionInfo } : {}),
+        },
       });
     }
 
@@ -139,18 +282,38 @@ export function createApp(ctx: AppContext) {
     const abort = new AbortController();
     c.req.raw.signal.addEventListener("abort", () => abort.abort(), { once: true });
 
+    const onSuccess = (content: string) => {
+      if (!ctx.config.session.enabled) return undefined;
+      const rec = rememberTurn(
+        ctx.sessions,
+        promptResolved.sessionKey,
+        { toolId: resolved.toolId, cwd },
+        messages,
+        content,
+      );
+      if (!promptResolved.sessionKey) return undefined;
+      return {
+        session_key: promptResolved.sessionKey,
+        session_mode: promptResolved.mode,
+        used_store: promptResolved.usedStore,
+        session_turns: rec?.turns.length ?? 0,
+      };
+    };
+
     try {
       if (req.stream) {
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
             const enc = new TextEncoder();
             const send = (obj: unknown) => controller.enqueue(enc.encode(toSseChunk(obj)));
+            let full = "";
             try {
               const result = await runPlanned({
                 plan,
                 timeoutMs: ctx.config.timeoutMs,
                 signal: abort.signal,
                 onStdout: (chunk) => {
+                  full += chunk;
                   send({
                     id,
                     object: "chat.completion.chunk",
@@ -164,6 +327,7 @@ export function createApp(ctx: AppContext) {
                 const msg = (result.stderr || result.stdout || "agent failed").slice(0, 4000);
                 send({ error: { message: msg, type: "agent_error" } });
               } else {
+                const sessOut = onSuccess(full.trimEnd());
                 send({
                   id,
                   object: "chat.completion.chunk",
@@ -171,6 +335,7 @@ export function createApp(ctx: AppContext) {
                   model: modelName,
                   choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
                   usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                  ...(sessOut ? { prompt_to_api: { session: sessOut } } : {}),
                 });
               }
               controller.enqueue(enc.encode("data: [DONE]\n\n"));
@@ -210,6 +375,7 @@ export function createApp(ctx: AppContext) {
       }
 
       const content = result.stdout.trimEnd();
+      const sessOut = onSuccess(content);
       return c.json({
         id,
         object: "chat.completion",
@@ -223,6 +389,7 @@ export function createApp(ctx: AppContext) {
           },
         ],
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        ...(sessOut ? { prompt_to_api: { session: sessOut } } : {}),
       });
     } catch (err) {
       release();

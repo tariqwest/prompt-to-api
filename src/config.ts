@@ -1,7 +1,7 @@
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
-import type { AppConfig, ConcurrencyConfig, PromptMode, StdinMode, ToolConfig } from "./types.ts";
+import type { AppConfig, ConcurrencyConfig, PromptMode, SessionConfig, StdinMode, ToolConfig } from "./types.ts";
 import { builtinTools } from "./adapters/catalog.ts";
 import { fileExists, fileReadText } from "./util/runtime.ts";
 import { expandHome } from "./util/messages.ts";
@@ -146,6 +146,27 @@ export function normalizeConfig(raw: unknown): Partial<AppConfig> {
     }
   }
 
+  let session: Partial<SessionConfig> | undefined;
+  const rawSession = r.session;
+  if (rawSession && typeof rawSession === "object") {
+    const s = rawSession as Record<string, unknown>;
+    session = {
+      ...(parseBoolean(s.enabled) !== undefined ? { enabled: parseBoolean(s.enabled)! } : {}),
+      ...(s.ttlMs !== undefined || s.ttl_ms !== undefined
+        ? { ttlMs: Number(s.ttlMs ?? s.ttl_ms) }
+        : {}),
+      ...(s.maxSessions !== undefined || s.max_sessions !== undefined
+        ? { maxSessions: Number(s.maxSessions ?? s.max_sessions) }
+        : {}),
+      ...(s.maxTurns !== undefined || s.max_turns !== undefined
+        ? { maxTurns: Number(s.maxTurns ?? s.max_turns) }
+        : {}),
+      ...(s.maxChars !== undefined || s.max_chars !== undefined
+        ? { maxChars: Number(s.maxChars ?? s.max_chars) }
+        : {}),
+    };
+  }
+
   return {
     ...(host !== undefined && { host }),
     ...(port !== undefined && { port }),
@@ -154,6 +175,7 @@ export function normalizeConfig(raw: unknown): Partial<AppConfig> {
     ...(trusted !== undefined && { trusted }),
     ...(timeoutMs !== undefined && { timeoutMs }),
     ...(concurrency !== undefined && { concurrency: concurrency as ConcurrencyConfig }),
+    ...(session !== undefined && { session: session as SessionConfig }),
     ...(tools !== undefined && { tools }),
   };
 }
@@ -214,6 +236,14 @@ export async function loadConfig(specifiedPath?: string): Promise<AppConfig> {
     maxPerAgent: fromUser.concurrency?.maxPerAgent ?? fromFile.concurrency?.maxPerAgent ?? 2,
   };
 
+  const session: SessionConfig = {
+    enabled: fromUser.session?.enabled ?? fromFile.session?.enabled ?? true,
+    ttlMs: fromUser.session?.ttlMs ?? fromFile.session?.ttlMs ?? 3_600_000,
+    maxSessions: fromUser.session?.maxSessions ?? fromFile.session?.maxSessions ?? 256,
+    maxTurns: fromUser.session?.maxTurns ?? fromFile.session?.maxTurns ?? 40,
+    maxChars: fromUser.session?.maxChars ?? fromFile.session?.maxChars ?? 200_000,
+  };
+
   return {
     host: env.host ?? fromUser.host ?? fromFile.host ?? "127.0.0.1",
     port: env.port ?? fromUser.port ?? fromFile.port ?? 8788,
@@ -225,6 +255,7 @@ export async function loadConfig(specifiedPath?: string): Promise<AppConfig> {
     trusted: env.trusted ?? fromUser.trusted ?? fromFile.trusted ?? true,
     timeoutMs: env.timeoutMs ?? fromUser.timeoutMs ?? fromFile.timeoutMs ?? 600_000,
     concurrency,
+    session,
     tools,
   };
 }

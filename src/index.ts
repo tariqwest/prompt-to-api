@@ -2,6 +2,7 @@ import { loadConfig } from "./config.ts";
 import { Registry } from "./adapters/registry.ts";
 import { ModelCatalog } from "./prompt/catalog.ts";
 import { ConcurrencyGate } from "./prompt/runner.ts";
+import { SessionStore } from "./prompt/session-store.ts";
 import { createApp } from "./server.ts";
 import { runInit } from "./init.ts";
 import { startServer } from "./util/runtime.ts";
@@ -33,11 +34,16 @@ Options for init:
   }
 
   const config = await loadConfig();
-  // Fix accidental placeholder if present
 
   const registry = new Registry(config);
   const catalog = new ModelCatalog(registry);
   const gate = new ConcurrencyGate(config.concurrency.maxGlobal, config.concurrency.maxPerAgent);
+  const sessions = new SessionStore({
+    ttlMs: config.session.ttlMs,
+    maxSessions: config.session.maxSessions,
+    maxTurns: config.session.maxTurns,
+    maxChars: config.session.maxChars,
+  });
 
   console.error("[prompt-to-api] detecting tools…");
   await catalog.bootstrap();
@@ -46,8 +52,11 @@ Options for init:
   console.error(
     `[prompt-to-api] tools: ${models.map((m) => m.metadata?.toolId).filter(Boolean).join(", ") || "(none)"}`,
   );
+  console.error(
+    `[prompt-to-api] sessions: ${config.session.enabled ? `on (ttl=${config.session.ttlMs}ms)` : "off"}`,
+  );
 
-  const app = createApp({ config, registry, catalog, gate });
+  const app = createApp({ config, registry, catalog, gate, sessions });
   const server = await startServer(app, { host: config.host, port: config.port });
 
   console.error(`[prompt-to-api] listening on http://${server.hostname}:${server.port}`);

@@ -8,5 +8,12 @@
   "concurrency": {
     "maxGlobal": 8,
     "maxPerAgent": 2
+  },
+  "session": {
+    "enabled": true,
+    "ttlMs": 3600000,
+    "maxSessions": 256,
+    "maxTurns": 40,
+    "maxChars": 200000
   }
 }

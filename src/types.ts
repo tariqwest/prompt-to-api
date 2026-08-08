@@ -8,6 +8,20 @@ export interface ConcurrencyConfig {
   maxPerAgent: number;
 }
 
+/** In-memory transcript session store (not warm CLI processes). */
+export interface SessionConfig {
+  enabled: boolean;
+  /** Idle eviction TTL */
+  ttlMs: number;
+  maxSessions: number;
+  /** Max turns retained per session (user+assistant pairs count as 2) */
+  maxTurns: number;
+  /** Max total characters across retained turn contents */
+  maxChars: number;
+}
+
+export type SessionMode = "auto" | "off" | "delta" | "full";
+
 export interface ToolConfig {
   enabled: boolean;
   /** Binary + fixed headless argv prefix, e.g. ["claude","-p"] or ["codex","exec"] */
@@ -38,6 +52,7 @@ export interface AppConfig {
   trusted: boolean;
   timeoutMs: number;
   concurrency: ConcurrencyConfig;
+  session: SessionConfig;
   tools: Record<ToolId, ToolConfig>;
 }
 

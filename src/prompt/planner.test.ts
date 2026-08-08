@@ -24,6 +24,7 @@ function loadSpecs(): Map<string, ToolSpec> {
     trusted: true,
     timeoutMs: 60_000,
     concurrency: { maxGlobal: 8, maxPerAgent: 2 },
+    session: { enabled: true, ttlMs: 60000, maxSessions: 10, maxTurns: 20, maxChars: 10000 },
     tools: builtinTools,
   };
   const reg = new Registry(config);
