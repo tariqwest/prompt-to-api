@@ -1,6 +1,6 @@
 {
   "name": "prompt-to-api",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenAI-compatible REST gateway for local single-prompt / print-mode AI CLIs",
   "type": "module",
   "license": "MIT",
