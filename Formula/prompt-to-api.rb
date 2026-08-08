@@ -4,8 +4,8 @@
 class PromptToApi < Formula
   desc "OpenAI-compatible REST gateway for local single-prompt / print-mode AI CLIs"
   homepage "https://github.com/tariqwest/prompt-to-api#readme"
-  url "https://github.com/tariqwest/prompt-to-api/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0dec3989ea4028fbd5454b67088b1f3936327dd8d4d9a20b45eefde088aacd68"
+  url "https://github.com/tariqwest/prompt-to-api/archive/refs/tags/v0.1.1.tar.gz"
+  sha256 "ee52eec6a2561a528bab8c4bd6e775e6e4f9d399af92c4433616e7f15e1cda49"
   license "MIT"
   head "https://github.com/tariqwest/prompt-to-api.git", branch: "main"
 
